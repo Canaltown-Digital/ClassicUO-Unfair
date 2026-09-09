@@ -100,6 +100,55 @@ namespace ClassicUO.Game.GameObjects
             return false;
         }
 
+        /// <summary>
+        /// Resolve world art without changing the legacy Art.GetArt() contract used by UI,
+        /// item-browser previews and pixel picking. HD textures can therefore have many more
+        /// source pixels while still drawing into the original UO logical width/height.
+        /// </summary>
+        private static bool TryGetStaticRenderData(
+            ushort graphic,
+            out Texture2D texture,
+            out Rectangle source,
+            out int logicalWidth,
+            out int logicalHeight,
+            out Vector2 baseScale,
+            out bool isHd
+        )
+        {
+            if (Client.Game.UO.Arts.TryGetHdStatic(graphic, out var hd) && hd.IsValid)
+            {
+                texture = hd.Texture;
+                source = hd.UV;
+                logicalWidth = hd.LogicalWidth;
+                logicalHeight = hd.LogicalHeight;
+                baseScale = new Vector2(
+                    logicalWidth / (float)source.Width,
+                    logicalHeight / (float)source.Height
+                );
+                isHd = true;
+                return true;
+            }
+
+            ref readonly var artInfo = ref Client.Game.UO.Arts.GetArt(graphic);
+            if (artInfo.Texture == null)
+            {
+                texture = null;
+                source = Rectangle.Empty;
+                logicalWidth = logicalHeight = 0;
+                baseScale = Vector2.One;
+                isHd = false;
+                return false;
+            }
+
+            texture = artInfo.Texture;
+            source = artInfo.UV;
+            logicalWidth = source.Width;
+            logicalHeight = source.Height;
+            baseScale = Vector2.One;
+            isHd = false;
+            return true;
+        }
+
         protected static void DrawStatic(
             UltimaBatcher2D batcher,
             ushort graphic,
@@ -110,25 +159,33 @@ namespace ClassicUO.Game.GameObjects
             bool isWet = false
         )
         {
-            ref readonly var artInfo = ref Client.Game.UO.Arts.GetArt(graphic);
-
-            if (artInfo.Texture != null)
+            if (
+                TryGetStaticRenderData(
+                    graphic,
+                    out var texture,
+                    out var source,
+                    out int logicalWidth,
+                    out int logicalHeight,
+                    out var baseScale,
+                    out _
+                )
+            )
             {
                 ref var index = ref Client.Game.UO.FileManager.Arts.File.GetValidRefEntry(graphic + 0x4000);
-                index.Width = (short)((artInfo.UV.Width >> 1) - 22);
-                index.Height = (short)(artInfo.UV.Height - 44);
+                index.Width = (short)((logicalWidth >> 1) - 22);
+                index.Height = (short)(logicalHeight - 44);
 
                 x -= index.Width;
                 y -= index.Height;
 
                 var pos = new Vector2(x, y);
-                var scale = Vector2.One;
+                var scale = baseScale;
                 if (isWet)
                 {
                     batcher.Draw(
-                        artInfo.Texture,
+                        texture,
                         pos,
-                        artInfo.UV,
+                        source,
                         hue,
                         0f,
                         Vector2.Zero,
@@ -139,13 +196,13 @@ namespace ClassicUO.Game.GameObjects
 
                     var sin = (float)Math.Sin(Time.Ticks / 1000f);
                     var cos = (float)Math.Cos(Time.Ticks / 1000f);
-                    scale = new Vector2(1.1f + sin * 0.1f, 1.1f + cos * 0.5f * 0.1f);
+                    scale *= new Vector2(1.1f + sin * 0.1f, 1.1f + cos * 0.5f * 0.1f);
                 }
 
                 batcher.Draw(
-                    artInfo.Texture,
+                    texture,
                     pos,
-                    artInfo.UV,
+                    source,
                     hue,
                     0f,
                     Vector2.Zero,
@@ -193,23 +250,31 @@ namespace ClassicUO.Game.GameObjects
             float depth
         )
         {
-            ref readonly var artInfo = ref Client.Game.UO.Arts.GetArt(graphic);
-
-            if (artInfo.Texture != null)
+            if (
+                TryGetStaticRenderData(
+                    graphic,
+                    out var texture,
+                    out var source,
+                    out int logicalWidth,
+                    out int logicalHeight,
+                    out _,
+                    out _
+                )
+            )
             {
                 ref var index = ref Client.Game.UO.FileManager.Arts.File.GetValidRefEntry(graphic + 0x4000);
-                index.Width = (short)((artInfo.UV.Width >> 1) - 22);
-                index.Height = (short)(artInfo.UV.Height - 44);
+                index.Width = (short)((logicalWidth >> 1) - 22);
+                index.Height = (short)(logicalHeight - 44);
 
                 batcher.Draw(
-                    artInfo.Texture,
+                    texture,
                     new Rectangle(
                         x - index.Width,
                         y - index.Height,
-                        artInfo.UV.Width,
-                        artInfo.UV.Height
+                        logicalWidth,
+                        logicalHeight
                     ),
-                    artInfo.UV,
+                    source,
                     hue,
                     angle,
                     Vector2.Zero,
@@ -234,31 +299,43 @@ namespace ClassicUO.Game.GameObjects
 
             graphic = (ushort)(graphic + index.AnimOffset);
 
-            ref readonly var artInfo = ref Client.Game.UO.Arts.GetArt(graphic);
-
-            if (artInfo.Texture != null)
+            if (
+                TryGetStaticRenderData(
+                    graphic,
+                    out var texture,
+                    out var source,
+                    out int logicalWidth,
+                    out int logicalHeight,
+                    out var baseScale,
+                    out bool isHd
+                )
+            )
             {
                 index = ref Client.Game.UO.FileManager.Arts.File.GetValidRefEntry(graphic + 0x4000);
-                index.Width = (short)((artInfo.UV.Width >> 1) - 22);
-                index.Height = (short)(artInfo.UV.Height - 44);
+                index.Width = (short)((logicalWidth >> 1) - 22);
+                index.Height = (short)(logicalHeight - 44);
 
                 x -= index.Width;
                 y -= index.Height;
 
                 Vector2 pos = new Vector2(x, y);
 
-                if (shadow)
+                // DrawShadow currently derives world size directly from source pixel dimensions.
+                // Until that helper gets its own logical-size overload, do not let an HD texture
+                // accidentally cast an 8x shadow. Walls do not use static shadows; trees/rocks can
+                // opt into HD once the shadow path is upgraded.
+                if (shadow && !isHd)
                 {
-                    batcher.DrawShadow(artInfo.Texture, pos, artInfo.UV, false, depth + 0.25f);
+                    batcher.DrawShadow(texture, pos, source, false, depth + 0.25f);
                 }
 
-                var scale = Vector2.One;
+                var scale = baseScale;
                 if (isWet)
                 {
                     batcher.Draw(
-                        artInfo.Texture,
+                        texture,
                         pos,
-                        artInfo.UV,
+                        source,
                         hue,
                         0f,
                         Vector2.Zero,
@@ -269,13 +346,13 @@ namespace ClassicUO.Game.GameObjects
 
                     var sin = (float)Math.Sin(Time.Ticks / 1000f);
                     var cos = (float)Math.Cos(Time.Ticks / 1000f);
-                    scale = new Vector2(1.1f + sin * 0.1f, 1.1f + cos * 0.5f * 0.1f);
+                    scale *= new Vector2(1.1f + sin * 0.1f, 1.1f + cos * 0.5f * 0.1f);
                 }
 
                 batcher.Draw(
-                    artInfo.Texture,
+                    texture,
                     pos,
-                    artInfo.UV,
+                    source,
                     hue,
                     0f,
                     Vector2.Zero,
