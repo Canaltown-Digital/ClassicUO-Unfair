@@ -6,6 +6,8 @@ using Microsoft.Xna.Framework.Graphics;
 using SDL3;
 using System;
 using System.Buffers;
+using System.Collections.Generic;
+using System.IO;
 
 namespace ClassicUO.Renderer.Arts
 {
@@ -17,14 +19,26 @@ namespace ClassicUO.Renderer.Arts
         private readonly Rectangle[] _realArtBounds;
         private readonly ArtLoader _artLoader;
         private readonly HuesLoader _huesLoader;
+        private readonly GraphicsDevice _graphicsDevice;
+        private readonly string _hdStaticsRoot;
+        private readonly Dictionary<uint, HdStaticArt> _hdStatics = new Dictionary<uint, HdStaticArt>();
+        private readonly HashSet<uint> _hdStaticsChecked = new HashSet<uint>();
 
         public Art(ArtLoader artLoader, HuesLoader huesLoader, GraphicsDevice device)
         {
             _artLoader = artLoader;
             _huesLoader = huesLoader;
+            _graphicsDevice = device;
             _atlas = new TextureAtlas(device, 4096, 4096, SurfaceFormat.Color);
             _spriteInfos = new SpriteInfo[_artLoader.File.Entries.Length];
             _realArtBounds = new Rectangle[_spriteInfos.Length];
+
+            string root = Environment.GetEnvironmentVariable("UNFAIR_HD_ART_ROOT");
+            if (!string.IsNullOrWhiteSpace(root))
+            {
+                _hdStaticsRoot = Path.Combine(root, "HD", "Statics");
+                Log.Info($"UNFAIR HD art root: {_hdStaticsRoot}");
+            }
         }
 
         public ref readonly SpriteInfo GetLand(uint idx)
@@ -32,6 +46,94 @@ namespace ClassicUO.Renderer.Arts
 
         public ref readonly SpriteInfo GetArt(uint idx)
             => ref Get(idx + 0x4000);
+
+        /// <summary>
+        /// Returns an optional high-resolution texture for world rendering while preserving
+        /// the legacy static's exact logical dimensions. UI previews, mouse picking and all
+        /// other legacy art consumers continue to use GetArt(), so introducing HD art does
+        /// not change TileData, placement, browser geometry or selection semantics.
+        /// </summary>
+        public bool TryGetHdStatic(uint itemId, out HdStaticArt hdArt)
+        {
+            if (_hdStatics.TryGetValue(itemId, out hdArt))
+            {
+                return true;
+            }
+
+            if (_hdStaticsChecked.Contains(itemId))
+            {
+                hdArt = default;
+                return false;
+            }
+
+            _hdStaticsChecked.Add(itemId);
+            hdArt = default;
+
+            if (string.IsNullOrWhiteSpace(_hdStaticsRoot))
+            {
+                return false;
+            }
+
+            string path = Path.Combine(_hdStaticsRoot, $"{itemId}.png");
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+
+            // The archive remains authoritative for logical geometry. The HD PNG is only
+            // allowed to replace pixels, never the object's UO footprint or anchor.
+            var legacy = _artLoader.GetArt(itemId + ArtLoader.MAX_LAND_DATA_INDEX_COUNT);
+            if (legacy.Pixels.IsEmpty || legacy.Width <= 0 || legacy.Height <= 0)
+            {
+                Log.Warn($"UNFAIR HD static {itemId}.png has no valid legacy art to anchor to");
+                return false;
+            }
+
+            Texture2D texture = null;
+            try
+            {
+                using (var stream = File.OpenRead(path))
+                {
+                    texture = Texture2D.FromStream(_graphicsDevice, stream);
+                }
+
+                if (texture == null || texture.Width <= 0 || texture.Height <= 0)
+                {
+                    texture?.Dispose();
+                    Log.Warn($"UNFAIR HD static {itemId}.png could not be decoded");
+                    return false;
+                }
+
+                // Keep the first implementation conservative. 4K per axis is already far
+                // beyond legacy UO art and matches the renderer atlas ceiling elsewhere.
+                if (texture.Width > 4096 || texture.Height > 4096)
+                {
+                    Log.Warn($"UNFAIR HD static {itemId}.png is too large: {texture.Width}x{texture.Height}");
+                    texture.Dispose();
+                    return false;
+                }
+
+                hdArt = new HdStaticArt(
+                    texture,
+                    new Rectangle(0, 0, texture.Width, texture.Height),
+                    legacy.Width,
+                    legacy.Height
+                );
+                _hdStatics[itemId] = hdArt;
+
+                Log.Info(
+                    $"UNFAIR HD static 0x{itemId:X4}: {texture.Width}x{texture.Height} -> logical {legacy.Width}x{legacy.Height}"
+                );
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                texture?.Dispose();
+                Log.Warn($"UNFAIR HD static {itemId}.png failed: {e.Message}");
+                return false;
+            }
+        }
 
         private ref readonly SpriteInfo Get(uint idx)
         {
