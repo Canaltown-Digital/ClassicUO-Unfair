@@ -8,6 +8,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 
 namespace ClassicUO.Renderer.Arts
 {
@@ -47,11 +48,54 @@ namespace ClassicUO.Renderer.Arts
         public ref readonly SpriteInfo GetArt(uint idx)
             => ref Get(idx + 0x4000);
 
+        private bool TryReadHdLogicalSize(uint itemId, out int logicalWidth, out int logicalHeight)
+        {
+            logicalWidth = 0;
+            logicalHeight = 0;
+
+            string manifestPath = Path.Combine(_hdStaticsRoot, $"{itemId}.json");
+            if (!File.Exists(manifestPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
+                JsonElement root = doc.RootElement;
+
+                if (
+                    !root.TryGetProperty("logicalWidth", out JsonElement widthElement)
+                    || !root.TryGetProperty("logicalHeight", out JsonElement heightElement)
+                    || !widthElement.TryGetInt32(out logicalWidth)
+                    || !heightElement.TryGetInt32(out logicalHeight)
+                    || logicalWidth <= 0
+                    || logicalHeight <= 0
+                    || logicalWidth > 2048
+                    || logicalHeight > 2048
+                )
+                {
+                    Log.Warn($"UNFAIR HD static {itemId}.json has invalid logical dimensions");
+                    logicalWidth = logicalHeight = 0;
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Warn($"UNFAIR HD static {itemId}.json failed: {e.Message}");
+                logicalWidth = logicalHeight = 0;
+                return false;
+            }
+        }
+
         /// <summary>
         /// Returns an optional high-resolution texture for world rendering while preserving
-        /// the legacy static's exact logical dimensions. UI previews, mouse picking and all
-        /// other legacy art consumers continue to use GetArt(), so introducing HD art does
-        /// not change TileData, placement, browser geometry or selection semantics.
+        /// the static's exact logical dimensions. A sidecar manifest can lock verified logical
+        /// geometry so a stale loose .art override cannot accidentally redefine the HD anchor.
+        /// UI previews, mouse picking and all other legacy art consumers continue to use
+        /// GetArt(), so introducing HD art does not change TileData or placement semantics.
         /// </summary>
         public bool TryGetHdStatic(uint itemId, out HdStaticArt hdArt)
         {
@@ -80,13 +124,23 @@ namespace ClassicUO.Renderer.Arts
                 return false;
             }
 
-            // The archive remains authoritative for logical geometry. The HD PNG is only
-            // allowed to replace pixels, never the object's UO footprint or anchor.
-            var legacy = _artLoader.GetArt(itemId + ArtLoader.MAX_LAND_DATA_INDEX_COUNT);
-            if (legacy.Pixels.IsEmpty || legacy.Width <= 0 || legacy.Height <= 0)
+            int logicalWidth;
+            int logicalHeight;
+
+            if (!TryReadHdLogicalSize(itemId, out logicalWidth, out logicalHeight))
             {
-                Log.Warn($"UNFAIR HD static {itemId}.png has no valid legacy art to anchor to");
-                return false;
+                // Manifestless HD art remains supported for convenience. In that case the
+                // current legacy art supplies logical geometry. Verified production/remaster
+                // assets should ship a sidecar manifest so an old loose .art cannot alter it.
+                var legacy = _artLoader.GetArt(itemId + ArtLoader.MAX_LAND_DATA_INDEX_COUNT);
+                if (legacy.Pixels.IsEmpty || legacy.Width <= 0 || legacy.Height <= 0)
+                {
+                    Log.Warn($"UNFAIR HD static {itemId}.png has no valid logical geometry");
+                    return false;
+                }
+
+                logicalWidth = legacy.Width;
+                logicalHeight = legacy.Height;
             }
 
             Texture2D texture = null;
@@ -116,13 +170,13 @@ namespace ClassicUO.Renderer.Arts
                 hdArt = new HdStaticArt(
                     texture,
                     new Rectangle(0, 0, texture.Width, texture.Height),
-                    legacy.Width,
-                    legacy.Height
+                    logicalWidth,
+                    logicalHeight
                 );
                 _hdStatics[itemId] = hdArt;
 
                 Log.Info(
-                    $"UNFAIR HD static 0x{itemId:X4}: {texture.Width}x{texture.Height} -> logical {legacy.Width}x{legacy.Height}"
+                    $"UNFAIR HD static 0x{itemId:X4}: {texture.Width}x{texture.Height} -> logical {logicalWidth}x{logicalHeight}"
                 );
 
                 return true;
