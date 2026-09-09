@@ -13,6 +13,13 @@ namespace ClassicUO.Renderer
         private const float MIN_PEEK_SPEED = 0.01f;
         private const float PEEK_TIME_FACTOR = 5;
 
+        // UNFAIR keeps HD source textures at high resolution, then lets the world camera
+        // decide how many screen pixels they actually receive. The normal UNFAIR launcher
+        // already supplies UNFAIR_HD_ART_ROOT, so an HD-enabled UNFAIR client defaults to
+        // a 2x world presentation without changing ClassicUO's saved Zoom/Profile value.
+        // Set UNFAIR_WORLD_SCALE explicitly to override this (1 = stock presentation).
+        private static readonly float _unfairWorldScale = ResolveUnfairWorldScale();
+
         private Matrix _transform = Matrix.Identity;
         private Matrix _inverseTransform = Matrix.Identity;
         private bool _updateMatrixes = true;
@@ -183,7 +190,23 @@ namespace ClassicUO.Renderer
         {
             float zoom = 1f / Zoom;
 
-            _lerpZoom = zoom;
+            _lerpZoom = zoom * _unfairWorldScale;
+        }
+
+        private static float ResolveUnfairWorldScale()
+        {
+            string explicitScale = Environment.GetEnvironmentVariable("UNFAIR_WORLD_SCALE");
+
+            if (!string.IsNullOrWhiteSpace(explicitScale) && float.TryParse(explicitScale, out float scale))
+            {
+                return MathHelper.Clamp(scale, 1f, 4f);
+            }
+
+            // Only UNFAIR's launcher sets this HD-art root. Stock/upstream-compatible
+            // launches therefore retain ClassicUO's normal 1x world presentation.
+            return string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("UNFAIR_HD_ART_ROOT"))
+                ? 1f
+                : 2f;
         }
 
         private void CalculatePeek(Vector2 origin)
