@@ -29,7 +29,7 @@ namespace ClassicUO.Game.UI.Controls
             new(StringComparer.OrdinalIgnoreCase);
 
         private readonly Texture2D _texture;
-        private readonly Rectangle _source;
+        private readonly Microsoft.Xna.Framework.Rectangle _source;
 
         public UnfairUiAssetControl(List<string> parts, string classToken)
         {
@@ -70,7 +70,7 @@ namespace ClassicUO.Game.UI.Controls
                 return;
             }
 
-            _source = new Rectangle(0, 0, _texture.Width, _texture.Height);
+            _source = new Microsoft.Xna.Framework.Rectangle(0, 0, _texture.Width, _texture.Height);
         }
 
         private static string SanitizeKey(string value)
@@ -134,7 +134,7 @@ namespace ClassicUO.Game.UI.Controls
                 {
                     batcher.Draw(
                         _texture,
-                        new Rectangle(x, y, Width, Height),
+                        new Microsoft.Xna.Framework.Rectangle(x, y, Width, Height),
                         _source,
                         hueVector,
                         layerDepth
