@@ -6639,16 +6639,28 @@ namespace ClassicUO.Network
                     string.Equals(entry, "gumppic", StringComparison.InvariantCultureIgnoreCase)
                 )
                 {
-                    GumpPic pic;
-                    var isVirtue = gparams.Count >= 6
-                        && gparams[5].IndexOf(
-                            "virtuegumpitem",
+                    var isUnfairUi = gparams.Count >= 6
+                        && gparams[5].StartsWith(
+                            "class=unfairui:",
                             StringComparison.InvariantCultureIgnoreCase
-                        ) >= 0;
+                        );
 
-                    if (isVirtue)
+                    if (isUnfairUi)
                     {
-                        pic = new VirtueGumpPic(world, gparams);
+                        gump.Add(new UnfairUiAssetControl(gparams, gparams[5]), page);
+                    }
+                    else
+                    {
+                        GumpPic pic;
+                        var isVirtue = gparams.Count >= 6
+                            && gparams[5].IndexOf(
+                                "virtuegumpitem",
+                                StringComparison.InvariantCultureIgnoreCase
+                            ) >= 0;
+
+                        if (isVirtue)
+                        {
+                            pic = new VirtueGumpPic(world, gparams);
                         pic.ContainsByBounds = true;
 
                         string s,
@@ -6764,12 +6776,13 @@ namespace ClassicUO.Network
 
                         pic.SetTooltip(lvl + s, 100);
                     }
-                    else
-                    {
-                        pic = new GumpPic(gparams);
-                    }
+                        else
+                        {
+                            pic = new GumpPic(gparams);
+                        }
 
-                    gump.Add(pic, page);
+                        gump.Add(pic, page);
+                    }
                 }
                 else if (
                     string.Equals(
