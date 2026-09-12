@@ -6639,15 +6639,22 @@ namespace ClassicUO.Network
                     string.Equals(entry, "gumppic", StringComparison.InvariantCultureIgnoreCase)
                 )
                 {
-                    var isUnfairUi = gparams.Count >= 6
-                        && gparams[5].StartsWith(
+                    string unfairUiClass = null;
+                    for (int classIndex = 4; classIndex < gparams.Count; classIndex++)
+                    {
+                        if (gparams[classIndex].StartsWith(
                             "class=unfairui:",
                             StringComparison.InvariantCultureIgnoreCase
-                        );
+                        ))
+                        {
+                            unfairUiClass = gparams[classIndex];
+                            break;
+                        }
+                    }
 
-                    if (isUnfairUi)
+                    if (unfairUiClass != null)
                     {
-                        gump.Add(new UnfairUiAssetControl(gparams, gparams[5]), page);
+                        gump.Add(new UnfairUiAssetControl(gparams, unfairUiClass), page);
                     }
                     else
                     {
