@@ -22,9 +22,13 @@ namespace ClassicUO.Game.UI.Controls
         private readonly string _caption;
         private bool _entered;
         private readonly RenderedText[] _fontTexture;
+        private const ushort UnfairInvisibleNormal = 0x7FFE;
+        private const ushort UnfairInvisiblePressed = 0x7FFF;
+
         private ushort _normal,
             _pressed,
             _over;
+        private readonly bool _unfairInvisible;
 
         public Button(
             int buttonID,
@@ -42,17 +46,26 @@ namespace ClassicUO.Game.UI.Controls
             _normal = normal;
             _pressed = pressed;
             _over = over;
+            _unfairInvisible = normal == UnfairInvisibleNormal && pressed == UnfairInvisiblePressed;
 
-            ref readonly var gumpInfo = ref Client.Game.UO.Gumps.GetGump(normal);
-            if (gumpInfo.Texture == null)
+            if (_unfairInvisible)
             {
-                Dispose();
-
-                return;
+                Width = 64;
+                Height = 32;
             }
+            else
+            {
+                ref readonly var gumpInfo = ref Client.Game.UO.Gumps.GetGump(normal);
+                if (gumpInfo.Texture == null)
+                {
+                    Dispose();
 
-            Width = gumpInfo.UV.Width;
-            Height = gumpInfo.UV.Height;
+                    return;
+                }
+
+                Width = gumpInfo.UV.Width;
+                Height = gumpInfo.UV.Height;
+            }
             FontHue = normalHue == ushort.MaxValue ? (ushort)0 : normalHue;
             HueHover = hoverHue == ushort.MaxValue ? normalHue : hoverHue;
 
@@ -172,6 +185,11 @@ namespace ClassicUO.Game.UI.Controls
 
         public override bool AddToRenderLists(RenderLists renderLists, int x, int y, ref float layerDepthRef)
         {
+            if (_unfairInvisible)
+            {
+                return base.AddToRenderLists(renderLists, x, y, ref layerDepthRef);
+            }
+
             float layerDepth = layerDepthRef;
             Texture2D texture = null;
             Rectangle bounds = Rectangle.Empty;
