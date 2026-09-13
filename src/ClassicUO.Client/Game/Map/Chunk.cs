@@ -90,13 +90,17 @@ namespace ClassicUO.Game.Map
 
                 for (int x = 0; x < 8; ++x, ++pos)
                 {
+                    ushort tileX = (ushort)(bx + x);
                     ushort tileID = (ushort)(cells[pos].TileID & 0x3FFF);
+
+                    if (UnfairTerrainOverrides.TryGet(index, tileX, tileY, out ushort overrideGraphic))
+                    {
+                        tileID = overrideGraphic;
+                    }
 
                     sbyte z = cells[pos].Z;
 
                     Land land = Land.Create(_world, tileID);
-
-                    ushort tileX = (ushort)(bx + x);
 
                     land.ApplyStretch(map, tileX, tileY, z);
                     land.X = tileX;
