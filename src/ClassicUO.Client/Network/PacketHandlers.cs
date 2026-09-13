@@ -4728,30 +4728,16 @@ namespace ClassicUO.Network
                     byte mapIndex = p.ReadUInt8();
                     ushort count = p.ReadUInt16BE();
 
+                    int blockYCount = Client.Game.UO.FileManager.Maps.MapBlocksSize[mapIndex, 1];
                     var touchedChunks = new HashSet<int>();
 
                     if (operation == 2)
                     {
+                        touchedChunks = UnfairTerrainOverrides.GetTouchedChunkKeys(mapIndex, blockYCount);
                         UnfairTerrainOverrides.ClearMap(mapIndex);
-
-                        if (world.Map != null && world.Map.Index == mapIndex)
-                        {
-                            int width = Client.Game.UO.FileManager.Maps.MapBlocksSize[mapIndex, 0];
-                            int height = Client.Game.UO.FileManager.Maps.MapBlocksSize[mapIndex, 1];
-
-                            for (int bx = 0; bx < width; bx++)
-                            {
-                                for (int by = 0; by < height; by++)
-                                {
-                                    if (world.Map.GetChunk2(bx, by, false) != null)
-                                        touchedChunks.Add(bx * height + by);
-                                }
-                            }
-                        }
                     }
                     else
                     {
-                        int blockYCount = Client.Game.UO.FileManager.Maps.MapBlocksSize[mapIndex, 1];
 
                         for (int i = 0; i < count; i++)
                         {
@@ -4770,8 +4756,6 @@ namespace ClassicUO.Network
 
                     if (world.Map != null && world.Map.Index == mapIndex)
                     {
-                        int blockYCount = Client.Game.UO.FileManager.Maps.MapBlocksSize[mapIndex, 1];
-
                         foreach (int key in touchedChunks)
                         {
                             int bx = key / blockYCount;
