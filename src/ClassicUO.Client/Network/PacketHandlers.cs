@@ -6,6 +6,7 @@ using ClassicUO.Game;
 using ClassicUO.Game.Data;
 using ClassicUO.Game.GameObjects;
 using ClassicUO.Game.Managers;
+using ClassicUO.Game.Map;
 using ClassicUO.Game.Scenes;
 using ClassicUO.Game.UI.Controls;
 using ClassicUO.Game.UI.Gumps;
@@ -4720,6 +4721,67 @@ namespace ClassicUO.Network
                     }
 
                     break;
+
+                case 0xFEEF: // UNFAIR memory-only terrain override
+                {
+                    byte operation = p.ReadUInt8();
+                    byte mapIndex = p.ReadUInt8();
+                    ushort count = p.ReadUInt16BE();
+
+                    var touchedChunks = new HashSet<int>();
+
+                    if (operation == 2)
+                    {
+                        UnfairTerrainOverrides.ClearMap(mapIndex);
+
+                        if (world.Map != null && world.Map.Index == mapIndex)
+                        {
+                            int width = Client.Game.UO.FileManager.Maps.MapBlocksSize[mapIndex, 0];
+                            int height = Client.Game.UO.FileManager.Maps.MapBlocksSize[mapIndex, 1];
+
+                            for (int bx = 0; bx < width; bx++)
+                            {
+                                for (int by = 0; by < height; by++)
+                                {
+                                    if (world.Map.GetChunk2(bx, by, false) != null)
+                                        touchedChunks.Add(bx * height + by);
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        int blockYCount = Client.Game.UO.FileManager.Maps.MapBlocksSize[mapIndex, 1];
+
+                        for (int i = 0; i < count; i++)
+                        {
+                            ushort x = p.ReadUInt16BE();
+                            ushort y = p.ReadUInt16BE();
+                            ushort graphic = p.ReadUInt16BE();
+
+                            if (operation == 0)
+                                UnfairTerrainOverrides.Set(mapIndex, x, y, graphic);
+                            else if (operation == 1)
+                                UnfairTerrainOverrides.Remove(mapIndex, x, y);
+
+                            touchedChunks.Add((x >> 3) * blockYCount + (y >> 3));
+                        }
+                    }
+
+                    if (world.Map != null && world.Map.Index == mapIndex)
+                    {
+                        int blockYCount = Client.Game.UO.FileManager.Maps.MapBlocksSize[mapIndex, 1];
+
+                        foreach (int key in touchedChunks)
+                        {
+                            int bx = key / blockYCount;
+                            int by = key % blockYCount;
+                            UnfairTerrainOverrides.ReloadChunkPreservingDynamic(world, mapIndex, bx, by);
+                        }
+                    }
+
+                    break;
+                }
 
                 case 0xBEEF: // ClassicUO commands
 
