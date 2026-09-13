@@ -4726,7 +4726,7 @@ namespace ClassicUO.Network
                 {
                     byte operation = p.ReadUInt8();
                     byte mapIndex = p.ReadUInt8();
-                    ushort count = p.ReadUInt16BE();
+                    ushort overrideCount = p.ReadUInt16BE();
 
                     int blockYCount = Client.Game.UO.FileManager.Maps.MapBlocksSize[mapIndex, 1];
                     var touchedChunks = new HashSet<int>();
@@ -4739,18 +4739,18 @@ namespace ClassicUO.Network
                     else
                     {
 
-                        for (int i = 0; i < count; i++)
+                        for (int i = 0; i < overrideCount; i++)
                         {
-                            ushort x = p.ReadUInt16BE();
-                            ushort y = p.ReadUInt16BE();
-                            ushort graphic = p.ReadUInt16BE();
+                            ushort overrideX = p.ReadUInt16BE();
+                            ushort overrideY = p.ReadUInt16BE();
+                            ushort overrideGraphic = p.ReadUInt16BE();
 
                             if (operation == 0)
-                                UnfairTerrainOverrides.Set(mapIndex, x, y, graphic);
+                                UnfairTerrainOverrides.Set(mapIndex, overrideX, overrideY, overrideGraphic);
                             else if (operation == 1)
-                                UnfairTerrainOverrides.Remove(mapIndex, x, y);
+                                UnfairTerrainOverrides.Remove(mapIndex, overrideX, overrideY);
 
-                            touchedChunks.Add((x >> 3) * blockYCount + (y >> 3));
+                            touchedChunks.Add((overrideX >> 3) * blockYCount + (overrideY >> 3));
                         }
                     }
 
