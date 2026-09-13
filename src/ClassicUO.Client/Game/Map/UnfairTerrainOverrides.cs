@@ -42,6 +42,19 @@ namespace ClassicUO.Game.Map
         public static void Remove(int map, ushort x, ushort y) =>
             _land.Remove(new Key(map, x, y));
 
+        public static HashSet<int> GetTouchedChunkKeys(int map, int blockYCount)
+        {
+            var chunks = new HashSet<int>();
+
+            foreach (Key key in _land.Keys)
+            {
+                if (key.Map == map)
+                    chunks.Add((key.X >> 3) * blockYCount + (key.Y >> 3));
+            }
+
+            return chunks;
+        }
+
         public static void ClearMap(int map)
         {
             var remove = new List<Key>();
